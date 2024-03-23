@@ -1,0 +1,12 @@
+name: nyu_vp
+channels:
+  - defaults
+dependencies:
+  - numpy=1.26.3
+  - pip
+  - python=3.10
+  - scipy=1.11.4
+  - matplotlib
+  - pip:
+    - pylsd-nova
+
