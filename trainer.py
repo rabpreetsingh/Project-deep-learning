@@ -139,9 +139,12 @@ class Trainer(object):
                 #     # self.plot(index, image[i], vpts[i], scores[i], ys[i], f"{viz}/{index:06}")
 
         self._write_metrics(len(self.val_loader), total_loss, "validation", True)
-        self.mean_loss = total_loss / len(self.val_loader)
+        try:
+            self.mean_loss = total_loss / len(self.val_loader)
+        except:
+            print("divide by zero error in mean loss calc")
         del total_loss
-        del input_dict,  image, target, gt_vpts
+
         torch.save(
             {
                 "iteration": self.iteration,
@@ -181,7 +184,7 @@ class Trainer(object):
             loss = self._loss(result)
             if np.isnan(loss.item()):
                 raise ValueError("loss is nan while training")
-            loss.backward()
+            #loss.backward()
             self.optim.step()
 
             if self.avg_metrics is None:
@@ -193,7 +196,7 @@ class Trainer(object):
 
             # # # delete those things to save memory
             del loss
-            del input_dict, image, target, gt_vpts
+
 
             if self.iteration % 400 == 0:
                 for k in range(0, torch.cuda.device_count()):
@@ -226,9 +229,12 @@ class Trainer(object):
                 with open(f"{self.out}/loss.csv", "a") as fout:
                     print(csv_str, file=fout)
                 pprint(prt_str, " " * 7)
-        self.writer.add_scalar(
-            f"{prefix}/total_loss", total_loss / size, self.iteration
-        )
+        try:
+            self.writer.add_scalar(
+                f"{prefix}/total_loss", total_loss / size, self.iteration
+            )
+        except:
+            print("division by zero")
         return total_loss
 
     # def plot(self, index, image, vpts, scores, ys, prefix):
