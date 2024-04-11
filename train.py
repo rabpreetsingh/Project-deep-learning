@@ -1,18 +1,3 @@
-#!/usr/bin/env python3
-"""Training and Evaluate a Neural Network
-Usage:
-    train.py [options] <yaml-config>
-    train.py (-h | --help )
-
-Arguments:
-    yaml-config                      Path to the yaml hyper-parameter file
-
-Options:
-   -h --help                         Show this screen.
-   -d --devices <devices>            Comma seperated GPU devices [default: 0]
-   -i --identifier <identifier>      Folder name [default: default-identifier]
-"""
-
 import os
 import sys
 import glob
@@ -33,74 +18,67 @@ import torch
 import scipy.io as sio
 from docopt import docopt
 import vpd
-from vpd.config import C, M
+from vpd.config import Config, ModelConfig
 from vpd.datasets import NYUDataset, WireframeDataset, ScanNetDataset, YUDDataset
 
 
 torch.cuda.empty_cache()
 
-print('empty cache')
+print('Clearing cache')
 
 import gc
 
 gc.collect()
 torch.cuda.memory_summary(device=None, abbreviated=False)
-print('empty cache 2')
+print('Clearing cache 2')
 
-def check_dir(dir_name):
-    if not os.path.exists(dir_name):
-        os.makedirs(dir_name)
+def create_directory(directory_name):
+    if not os.path.exists(directory_name):
+        os.makedirs(directory_name)
     else:
-        shutil.rmtree(dir_name)
-        os.makedirs(dir_name)
-
-# def git_hash():
-#     cmd = 'git log -n 1 --pretty="%h"'
-#     ret = subprocess.check_output(shlex.split(cmd)).strip()
-#     if isinstance(ret, bytes):
-#         ret = ret.decode()
-#     return ret
+        shutil.rmtree(directory_name)
+        os.makedirs(directory_name)
 
 
-def get_outdir(identifier):
-    # load config
+
+def generate_output_directory(identifier):
+    # load configuration
     name = str(datetime.datetime.now().strftime("%y%m%d-%H%M%S"))
-    # name += "-%s" % git_hash()
+    # name += "-%s" % get_git_hash()
     name += "-%s" % identifier
-    outdir = osp.join(osp.expanduser(C.io.logdir), name)
-    if not osp.exists(outdir):
-        os.makedirs(outdir)
-    C.io.resume_from = outdir
-    C.to_yaml(osp.join(outdir, "config.yaml"))
-    # os.system(f"git diff HEAD > {outdir}/gitdiff.patch")
-    return outdir
+    out_directory = osp.join(osp.expanduser(Config.io.log_directory), name)
+    if not osp.exists(out_directory):
+        os.makedirs(out_directory)
+    Config.io.resume_from = out_directory
+    Config.to_yaml(osp.join(out_directory, "config.yaml"))
+
+    return out_directory
 
 
 def main():
     args = docopt(__doc__)
-    config_file = args["<yaml-config>"]
-    C.update(C.from_yaml(filename=config_file))
-    M.update(C.model)
-    pprint.pprint(C, indent=4)
-    resume_from = C.io.resume_from
+    configuration_file = args["<yaml-config>"]
+    Config.update(Config.from_yaml(filename=configuration_file))
+    ModelConfig.update(Config.model)
+    pprint.pprint(Config, indent=4)
+    resume_from = Config.io.resume_from
 
     random.seed(0)
     np.random.seed(0)
     torch.manual_seed(0)
-    print('torch version', torch.__version__)
+    print('Torch version:', torch.__version__)
     device_name = "cuda"
     num_gpus = args["--devices"].count(",") + 1
     num_gpus = 1
-    print('num_gpus', num_gpus)
+    print('Number of GPUs:', num_gpus)
     os.environ["CUDA_VISIBLE_DEVICES"] = args["--devices"]
     if torch.cuda.is_available():
         device_name = "cuda"
         torch.cuda.empty_cache()
-        # https://github.com/NVIDIA/pix2pixHD/issues/176
         torch.backends.cudnn.benchmark = True
         torch.backends.cudnn.deterministic = True
         torch.cuda.manual_seed(0)
-        print('cudnn', torch.backends.cudnn.version())
+        print('CuDNN version:', torch.backends.cudnn.version())
         print('Active CUDA Device: GPU', torch.cuda.current_device())
         print("Let's use", torch.cuda.device_count(), "GPU(s)!")
         for k in range(0, torch.cuda.device_count()):
@@ -113,64 +91,64 @@ def main():
     print(device)
     print("-------------------------------")
     # 1. dataset
-    batch_size = M.batch_size * num_gpus
-    datadir = C.io.datadir
-    num_workers = C.io.num_workers * num_gpus
+    batch_size = ModelConfig.batch_size * num_gpus
+    data_directory = Config.io.data_directory
+    num_workers = Config.io.num_workers * num_gpus
     kwargs = {
         "batch_size": batch_size,
         "num_workers": num_workers if os.name != "nt" else 0,
         "pin_memory": True,
     }
     
-    if C.io.dataset.upper() == "WIREFRAME":
+    if Config.io.dataset.upper() == "WIREFRAME":
         Dataset = WireframeDataset
-    elif C.io.dataset.upper() == "SCANNET":
+    elif Config.io.dataset.upper() == "SCANNET":
         Dataset = ScanNetDataset
-    elif C.io.dataset.upper() == "NYU":
+    elif Config.io.dataset.upper() == "NYU":
         Dataset = NYUDataset
-    elif C.io.dataset.upper() == "YUD":
+    elif Config.io.dataset.upper() == "YUD":
         Dataset = YUDDataset
     else:
         raise NotImplementedError
     train_loader = torch.utils.data.DataLoader(
-        Dataset(datadir, split="train"), shuffle=True, **kwargs
+        Dataset(data_directory, split="train"), shuffle=True, **kwargs
     )
-    val_loader = torch.utils.data.DataLoader(
-        Dataset(datadir, split="valid"), shuffle=False, **kwargs
+    validation_loader = torch.utils.data.DataLoader(
+        Dataset(data_directory, split="valid"), shuffle=False, **kwargs
     )
     epoch_size = len(train_loader)
-    print('epoch_size: train/valid',  len(train_loader), len(val_loader))
+    print('Epoch size: train/valid',  len(train_loader), len(validation_loader))
 
-    npzfile = np.load(C.io.ht_mapping, allow_pickle=True)
+    npzfile = np.load(Config.io.ht_mapping, allow_pickle=True)
     ht_mapping = npzfile['ht_mapping']
     ht_mapping[:,2] = npzfile['rho_res'].item() - np.abs(ht_mapping[:,2])
     ht_mapping[:,2] /= npzfile['rho_res'].item()
-    vote_ht_dict={}
-    vote_ht_dict["vote_mapping"]= torch.tensor(ht_mapping, requires_grad=False).float().contiguous()
-    vote_ht_dict["im_size"]= (npzfile['rows'], npzfile['cols'])
-    vote_ht_dict["ht_size"]= (npzfile['h'], npzfile['w'])
-    print('vote_ht_dict  memory MB', vote_ht_dict["vote_mapping"].size(),
-          vote_ht_dict["vote_mapping"].element_size() * vote_ht_dict["vote_mapping"].nelement() / (1024 * 1024))
+    voting_ht_dictionary={}
+    voting_ht_dictionary["vote_mapping"]= torch.tensor(ht_mapping, requires_grad=False).float().contiguous()
+    voting_ht_dictionary["im_size"]= (npzfile['rows'], npzfile['cols'])
+    voting_ht_dictionary["ht_size"]= (npzfile['h'], npzfile['w'])
+    print('Voting HT dictionary  memory MB', voting_ht_dictionary["vote_mapping"].size(),
+          voting_ht_dictionary["vote_mapping"].element_size() * voting_ht_dictionary["vote_mapping"].nelement() / (1024 * 1024))
 
-    npzfile = np.load(C.io.sphere_mapping, allow_pickle=True)
+    npzfile = np.load(Config.io.sphere_mapping, allow_pickle=True)
     sphere_neighbors = npzfile['sphere_neighbors_weight']
-    vote_sphere_dict={}
-    vote_sphere_dict["vote_mapping"]=torch.tensor(sphere_neighbors, requires_grad=False).float().contiguous()
-    vote_sphere_dict["ht_size"]=(npzfile['h'], npzfile['w'])
-    vote_sphere_dict["sphere_size"]=npzfile['num_points']
-    print('vote_sphere_dict  memory MB', vote_sphere_dict["sphere_size"], vote_sphere_dict["vote_mapping"].size(),
-          vote_sphere_dict["vote_mapping"].element_size() * vote_sphere_dict["vote_mapping"].nelement() / (1024 * 1024))
+    voting_sphere_dictionary={}
+    voting_sphere_dictionary["vote_mapping"]=torch.tensor(sphere_neighbors, requires_grad=False).float().contiguous()
+    voting_sphere_dictionary["ht_size"]=(npzfile['h'], npzfile['w'])
+    voting_sphere_dictionary["sphere_size"]=npzfile['num_points']
+    print('Voting sphere dictionary  memory MB', voting_sphere_dictionary["sphere_size"], voting_sphere_dictionary["vote_mapping"].size(),
+          voting_sphere_dictionary["vote_mapping"].element_size() * voting_sphere_dictionary["vote_mapping"].nelement() / (1024 * 1024))
 
     # 2. model
-    if M.backbone == "stacked_hourglass":
+    if ModelConfig.backbone == "stacked_hourglass":
         backbone = vpd.models.hg(
-            planes=128, depth=M.depth, num_stacks=M.num_stacks, num_blocks=M.num_blocks
+            planes=128, depth=ModelConfig.depth, num_stacks=ModelConfig.num_stacks, num_blocks=ModelConfig.num_blocks
         )
         print (backbone)
     else:
         raise NotImplementedError
 
-    model = vpd.models.VanishingNet(backbone, vote_ht_dict, vote_sphere_dict)
+    model = vpd.models.VanishingNet(backbone, voting_ht_dictionary, voting_sphere_dictionary)
     model = model.to(device)
     model = torch.nn.DataParallel(
         model, device_ids=list(range(args["--devices"].count(",") + 1))
@@ -178,49 +156,49 @@ def main():
     torch.cuda.empty_cache()
     # print('model', model)
     ##### number of parameters in a model
-    total_params = sum(p.numel() for p in model.parameters())
-    print('num of total parameters', total_params)
+    total_parameters = sum(p.numel() for p in model.parameters())
+    print('Number of total parameters', total_parameters)
     ##### number of trainable parameters in a model
-    train_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print('num of trainable parameters', train_params)
+    trainable_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print('Number of trainable parameters', trainable_parameters)
     torch.cuda.empty_cache()
 
     # 3. optimizer
-    if C.optim.name == "Adam":
-        optim = torch.optim.Adam(
+    if Config.optimization.name == "Adam":
+        optimizer = torch.optim.Adam(
             model.parameters(),
-            lr=C.optim.lr * num_gpus,
-            weight_decay=C.optim.weight_decay,
-            amsgrad=C.optim.amsgrad,
+            lr=Config.optimization.learning_rate * num_gpus,
+            weight_decay=Config.optimization.weight_decay,
+            amsgrad=Config.optimization.amsgrad,
         )
-    elif C.optim.name == "SGD":
-        optim = torch.optim.SGD(
+    elif Config.optimization.name == "SGD":
+        optimizer = torch.optim.SGD(
             model.parameters(),
-            lr=C.optim.lr * num_gpus,
-            weight_decay=C.optim.weight_decay,
-            momentum=C.optim.momentum,
+            lr=Config.optimization.learning_rate * num_gpus,
+            weight_decay=Config.optimization.weight_decay,
+            momentum=Config.optimization.momentum,
         )
     else:
         raise NotImplementedError
 
     if resume_from:
-        print('resume_from', resume_from)
+        print('Resuming training from', resume_from)
         checkpoint = torch.load(osp.join(resume_from, "checkpoint_latest.pth.tar"))
         model.load_state_dict(checkpoint["model_state_dict"])
-        optim.load_state_dict(checkpoint["optim_state_dict"])
-    outdir = resume_from or get_outdir(args["--identifier"])
-    print("outdir:", outdir)
+        optimizer.load_state_dict(checkpoint["optim_state_dict"])
+    output_directory = resume_from or generate_output_directory(args["--identifier"])
+    print("Output directory:", output_directory)
     torch.cuda.empty_cache()
 
     try:
         trainer = vpd.trainer.Trainer(
             device=device,
             model=model,
-            optimizer=optim,
+            optimizer=optimizer,
             train_loader=train_loader,
-            val_loader=val_loader,
+            val_loader=validation_loader,
             batch_size=batch_size,
-            out=outdir,
+            out=output_directory,
         )
         if resume_from:
             trainer.iteration = checkpoint["iteration"]
@@ -229,13 +207,13 @@ def main():
                 trainer.iteration -= trainer.iteration % epoch_size
             trainer.epoch = checkpoint["epoch"]
             trainer.best_mean_loss = checkpoint["best_mean_loss"]
-            print('trainer.epoch, trainer.iteration, trainer.best_mean_loss ', trainer.epoch, trainer.iteration, trainer.best_mean_loss )
+            print('Trainer epoch, iteration, best mean loss: ', trainer.epoch, trainer.iteration, trainer.best_mean_loss )
             del checkpoint
         trainer.train()
-        print('finish trainig at: ', str(datetime.datetime.now()))
+        print('Finished training at: ', str(datetime.datetime.now()))
     except BaseException:
-        if len(glob.glob(f"{outdir}/viz/*")) <= 1:
-            shutil.rmtree(outdir)
+        if len(glob.glob(f"{output_directory}/visualization/*")) <= 1:
+            shutil.rmtree(output_directory)
         raise
 
 
