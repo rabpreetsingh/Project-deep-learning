@@ -169,7 +169,7 @@ if __name__ == "__main__":
 
     # np.savez_compressed(os.path.join(opt.pred_dir, 'error.npz'), error = np.hstack(all_errors))
     auc, plot_points = calc_auc(np.array(all_errors), cutoff=10)
-    print("AUC: ", auc.shape, auc)
+    print("AUC shape: ", auc.shape, auc)
     plt.figure()
     plt.plot(plot_points[:, 0], plot_points[:, 1], 'b-', lw=3, label='AUC: %.3f ' % (auc * 100.))
     axes = plt.gca()
