@@ -9,3 +9,9 @@ To solve these issues, we came up with a solution: we added some basic geometric
 
 - The Hough Transform helps us find lines in pictures.
 - The Gaussian sphere mapping helps us find where lines meet
+
+Training 
+- `python train.py -d 0 --identifier baseline config/nyu.yaml`
+Testing/ Demo
+-  `!python demo.py -d 0  config/nyu.yaml  logs/240410-192351-baseline/checkpoint_latest.pth.tar vpd/dataset/nyu_vp/0089_0.png`
+-  `!python eval_nyu.py -d 0  --dump result/  config/nyu.yaml  logs/240410-192351-baseline/checkpoint_latest.pth.tar`
